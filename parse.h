@@ -8,59 +8,37 @@
 	lval = getval(expr, nchr, 'l');\
 	rval = getval(expr, nchr, 'r');\
 	llim = getlim(expr, nchr, 'l');\
-	rlim = getlim(expr, nchr, 'r')\
+	rlim = getlim(expr, nchr, 'r')
 
 /* Initializes new expression string in evaluate() */
 #define INIT_EXPR()\
 	if ((result_str = dtos(result, DBL_DIG)) == NULL) {\
 		free(expr);\
-		errx(EXIT_FAILURE, "Internal error (evaluate.dtos)");\
+		fail("Internal error (evaluate.dtos)");\
 	}\
 	if ((expr = pushsub(expr, result_str, llim, rlim)) == NULL) {\
 		free(result_str);\
-		errx(EXIT_FAILURE, "Internal error (evaluate.pushsub)");\
+		fail("Internal error (evaluate.pushsub)");\
 	}
 
-/* Program name macro
- * Ignores './' if included */
-#define PROG_NAME\
-	program_invocation_name[1] == '/' ?\
-	program_invocation_name + 2 :\
-	program_invocation_name
-
-/* Prints debug info if debugging is on */
-#define PRINT_DEBUG()\
-	if (debug)\
-		puts(expr)
-
-/* Passed by [type]-returning functions on failure */
-#define INT_FAIL	INT_MAX
+#define PROG_NAME	"integrator"
+#define INT_FAIL	INT_MAX	// Passed by [type]-returning functions on failure
 #define DBL_FAIL	DBL_MAX
-
-/* Indicates valid syntax */
-#define CHK_PASS	-1
-
-#define OBS_R		1
+#define CHK_PASS	-1		// Used by chk_parenth() and chk_syntax(); Indicates valid syntax
+#define OBS_R		1		// Used by fobst(); Indicates obstruction in operation
 #define OBS_L		2
 
-/* Debug mode */
-static bool debug = true;
+static bool DEBUG = false;
+static const char *VAL_CHRS = "+-!^*/%.()\n1234567890",
+				  *OPERS_A = "+-!^*/%",	// All
+		  		  *OPERS_S = "^*/%",	// Single
+		  		  *OPERS_D = "+-!";		// Double
 
-/* Program name for use in error messages */
-extern char *program_invocation_name;
+/* Determines whether a parenthesis indicates multiplication */
+extern bool toast(const char *_expr, unsigned _parpos);
 
-/* Types of characters read */
-static const char *valchrs = "+-!^*/%1234567890.()\n",
-				  *opers = "+-!^*/%",
-		  		  *single_opers = "^*/%",
-		  		  *double_opers = "+-!";
-
-/* Flags */
-enum flag{F_PAR = 0,	/* Ignore parentheses (-p) */
-		  F_SYN = 0,	/* Ignore syntax errors (-s) */
-		  F_NAN = 0,	/* Return nonreal answers (-n) */
-		  F_DEC = 6,	/* Round to number of decminal places (-d [int])*/
-		  F_HLP = 0};	/* Outputs help page */
+/* Prints error message and exits program */
+extern void fail(const char *_desc);
 
 /* Returns string representation of double
  * Resulting string must be freed */
@@ -75,12 +53,12 @@ extern char *pushsub(char *_s, char *_sub, unsigned _low, unsigned _high);
 
 /* Evaluates mathemetical expression starting from given index position
  * Returns string representation of result depending on index
- * Returns NULL on failure
- * 
- * Flags:
- *	* F_PAR - Ignores parentheses 
- *	* F_SYN - Ignores syntax errors */
+ * Returns NULL on failure */
 extern char *simplify(const char *_expr, unsigned _from);
+
+/* Returns OBS_R or OBS_L depending on type of obstruction(s)
+ * If none are found, returns 0 */
+extern unsigned isclr(const char *_expr, unsigned _operpos, unsigned _low, unsigned _high);
 
 /* Returns true if floating-point numbers are equal */
 extern bool isequal(double _x, double _y);
@@ -109,18 +87,16 @@ extern int getdigit(double _x, int _place);
  * Returns OPER_MISS if invalid direction or operand is missing */
 extern int getlim(char *_expr, unsigned _operpos, char _dir);
 
-/* Returns OBS_R or OBS_L depending on type of obstruction(s)
- * If none are found, returns 0 */
-extern unsigned isclr(const char *_expr, unsigned _operpos, unsigned _low, unsigned _high);
+/* Prints string with character at given position highlighted red */
+extern void printh(const char *_s, unsigned _hpos);
 
-extern unsigned findob(const char *_expr, unsigned _operpos, unsigned _llim, unsigned _rlim);
+/* Returns number of indices operator is from closest obstruction in operation
+   If none are found, returns 0 */
+extern unsigned fobst(const char *_expr, unsigned _operpos, unsigned _llim, unsigned _rlim);
 
 /* Evaluates mathematical expression from index position 0
  * Ignores parentheses and syntax errors
- * Returns DBL_MAX on failure
- * 
- * Flags:
- * 	* F_NAN - Calculates nonreal answers */
+ * Returns DBL_MAX on failure */
 extern double evaluate(const char *_expr);
 
 /* Returns left- or right-hand value of the operand at given position in the expression */
@@ -129,4 +105,4 @@ extern double getval(char *_expr, unsigned _operpos, char _dir);
 /* Returns double representation of string */
 extern double stod(const char *_s);
 
-#endif /* #ifdef _PARSE_H_ */
+#endif /* #ifdef PARSE_H */
