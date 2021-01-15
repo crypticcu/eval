@@ -1,39 +1,47 @@
+#include <ctype.h>
+#include <float.h>
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-#include <ctype.h>
-#include <limits.h>
-#include <float.h>
-#include <math.h>
-#include <unistd.h>
-#include "parse.h"
+#include "eval.h"
 
 /* Leading underscore signifies parameter */
 /* nchr ~ index position				  */
 
 void fail(const char *_desc) {
-	printf("%s: %s\n", PROG_NAME, _desc);
-	exit(EXIT_FAILURE);
+	printf("%s\n", _desc);
+	if (CMD_LINE) // Exit program if using command-line
+		exit(EXIT_FAILURE);
 }
 
-void printh(const char *_s, unsigned _hpos) {
+void printu(const char *_s, size_t _hpos) {
 	for (int nchr = 0; nchr < strlen(_s); nchr++) {
 		if (nchr == _hpos)
-			printf("\033[31m");	// Red char color escape code
-		else if (nchr == _hpos + 1)
-			printf("\033[0m");
+			printf("\e[4m");	// Underline
 		putchar(_s[nchr]);
+		if (nchr == _hpos)
+			printf("\e[24m");	// Reset underline
 	}
-	printf("\033[0m"); // Reset formatting in case character is at end of string
 }
 
-char *dtos(double _x, unsigned _sig) {	// Dynamic memory: numstr
+char *dtos(double _x, size_t _sig) {	// Dynamic memory: numstr
+	size_t nwhole = nplaces(_x);
+
+	if (nwhole > DBL_DIG)
+		return STR_OVER;
+	if (nwhole + _sig > DBL_DIG)
+		_sig = DBL_DIG - nwhole;
+	if (_sig > DBL_DIG)	// Decimal place exceeds accurate number allotted by system
+		_sig = DBL_DIG;
+
 	bool is_negative = _x < 0, is_decimal = _sig, only_decimal = _x < 1 && _x > -1, only_whole = isequal(_x, (int) _x);
-	unsigned nwhole = nplaces(_x), reqsize = nwhole + _sig + is_negative + is_decimal + only_decimal;
+	size_t reqsize = nwhole + _sig + is_negative + is_decimal + only_decimal;
 	char *numstr = (char *) calloc(reqsize + 1, sizeof(char));
 
-	if (_sig > LDBL_DIG || numstr == NULL)	// Decimal place exceeds accurate number allotted by system || Allocation fails
+	if (numstr == NULL)	// Allocation fails
 		return NULL;
 	if (is_negative) {	// Negative and decimal requirements
 		numstr[0] = '-';
@@ -45,7 +53,7 @@ char *dtos(double _x, unsigned _sig) {	// Dynamic memory: numstr
 		numstr[0] = '0';
 		numstr[1] = '.';
 	}
-	for (int nchr = is_negative + only_decimal * 2, place = nplaces(_x) - 1; nchr < reqsize; nchr++, place--) {	// 'nchr' skips characters reserved for negative sign and decimal point, if present
+	for (int nchr = is_negative + only_decimal * 2, place = nplaces(_x) - !(nwhole == FLT_DIG && only_whole); nchr < reqsize; nchr++, place--) {	// Skip characters reserved for negative sign and decimal point, if present
 		numstr[nchr] = getdigit(_x, place) + 48; // '0' = 48
 		if (place == 0) {
 			if (only_whole)
@@ -57,18 +65,18 @@ char *dtos(double _x, unsigned _sig) {	// Dynamic memory: numstr
 	return numstr;
 }
 
-char *popsub(const char *_s, unsigned _low, unsigned _high) { // Dynamic memory: sub
+char *popsub(const char *_s, size_t _low, size_t _high) { // Dynamic memory: sub
 	char *sub;	// Substring to be 'popped' from string
 
 	if (_low >= strlen(_s) || _high >= strlen(_s) || _low > _high ||	// Low/high indices exceed range of string || Low index is greater than high || Allocation fails
 	(sub = (char *) calloc(_high - _low + 2, sizeof(char))) == NULL)
 		return NULL;
-	for (unsigned nchr_old = _low, nchr_new = 0; nchr_old <= _high; nchr_old++, nchr_new++)
+	for (size_t nchr_old = _low, nchr_new = 0; nchr_old <= _high; nchr_old++, nchr_new++)
 		sub[nchr_new] = _s[nchr_old];
 	return sub;
 }
 
-char *pushsub(char *_s, char *_sub, unsigned _low, unsigned _high) { // Dynamic memory: newstr
+char *pushsub(char *_s, char *_sub, size_t _low, size_t _high) { // Dynamic memory: newstr
 	int nchr_new;
 	char *newstr = (char *) calloc(
 		strlen(_s)				// Original length
@@ -90,39 +98,35 @@ char *pushsub(char *_s, char *_sub, unsigned _low, unsigned _high) { // Dynamic 
 	return newstr;
 }
 
-char *simplify(const char *_expr, unsigned _from) {	// Dynamic memory: subA, subB, expr
+char *simplify(const char *_expr, size_t _from) {	// Dynamic memory: subA, subB, expr
 	bool read_parenth = false;
 	char chr, *subA = NULL, *subB = NULL,
 		*expr = (char *) calloc(strlen(_expr) + 1, sizeof(char)); // Modifiable expression
-	unsigned par_low, par_high, invpos;
+	size_t par_low, par_high;
+	int invpos;
 	double result;
+
 	if (expr == NULL)
 		return NULL;
-	if (!_from) { //Only use on first function call, in which '_from' is always zero
-		if (chk_syntax(_expr) != CHK_PASS) { // Check for syntax errors; Ignore if '-s' is passed
-			invpos = chk_syntax(_expr);
+	if (!_from) { // Check syntax and parenthesese only once (_from is always 0 on first call)
+		if ((invpos = chk_syntax(_expr)) != CHK_PASS)	// Check for syntax errors
 			goto syntax_err;
-		}
-		if (chk_parenth(_expr) != CHK_PASS) { // Check for parenthetical errors; Ignore if '-p' is passed
-			invpos = chk_parenth(_expr);
+		if ((invpos = chk_parenth(_expr)) != CHK_PASS)	// Check for parenthetical errors
 			goto syntax_err;
-		}
 	}
 	strcpy(expr, _expr); // Copy constant expression to modifiable one
 	for (int nchr = _from; (chr = expr[nchr]); nchr++) {	// Go straight to evaluate() if '-p' is passed
 		if (chr == ')') {
 			par_high = nchr;
 			read_parenth = false;
-			if ((subA = popsub(expr, par_low, par_high)) == NULL) {
-				free(expr);
-				return NULL;
-			}
+			if ((subA = popsub(expr, par_low, par_high)) == NULL)
+				goto popsub_err;
 			expr[par_low] = (toast(expr, par_low)) ? '*' : ' ';
 			expr[par_high] = (toast(expr, par_high)) ? '*' : ' ';
 			result = evaluate(subA);	// Value passed to result to increase efficiency and improve debuggiing mode clarity
 			if (isequal(result, DBL_FAIL))	// evaluate() does not return heap address, so can be called without assignment
 				goto evaluate_err;
-			if ((subB = dtos(result, LDBL_DIG)) == NULL)
+			if ((subB = dtos(result, DBL_DIG)) == NULL)
 				goto dtos_err;
 			free(subA);
 			if ((expr = pushsub(expr, subB, par_low + 1, par_high - 1)) == NULL)	// Do not overwite space where parentheses used to be
@@ -146,29 +150,34 @@ char *simplify(const char *_expr, unsigned _from) {	// Dynamic memory: subA, sub
 	result = evaluate(expr);
 	if (isequal(result, DBL_FAIL))
 		goto evaluate_err;
-	if ((expr = dtos(result, LDBL_DIG)) == NULL)
+	if ((expr = dtos(result, DBL_DIG)) == NULL)
 		goto dtos_err;
 	free(subA);
 	return expr;
 
 	syntax_err:
-		printf("%s: Syntax error: ", PROG_NAME);
-		printh(_expr, invpos);
-		putchar('\n');
+		printf("Syntax error: ");
+		printu(_expr, invpos);
 		free(expr);
-		exit(EXIT_FAILURE);
+		return NULL;
 	evaluate_err:
 		free(subA);
-		free(expr);
-		fail("Internal error (simplify.evaluate)");
+		return NULL;
 	dtos_err:
 		free(subA);
+		fail("Internal error (simplify.dtos)"); // Exits program if using command-line
+		return NULL;
+	popsub_err:
+		free(expr);
 		fail("Internal error (simplify.dtos)");
+		return NULL;
 	pushsub_err:
 		fail("Internal error (simplify.pushsub)");
+		return NULL;
 	simplify_err:
 		free(subA);
 		fail("Internal error (simplify.simplify)");
+		return NULL;
 }
 
 bool isequal(double _x, double _y) {
@@ -186,7 +195,7 @@ bool isnumer(char _c) {
 	return (isdigit(_c) || _c == '-' || _c == '.');
 }
 
-bool toast(const char *_expr, unsigned _parpos) {	// To asterisk?
+bool toast(const char *_expr, size_t _parpos) {	// To asterisk?
 	char chr = _expr[_parpos],
 		 next, // Character after parenthesis
 		 last;	// Character before parenthesis
@@ -198,18 +207,18 @@ bool toast(const char *_expr, unsigned _parpos) {	// To asterisk?
 		chr == ')' && next == '(') ? true : false;
 }
 
-unsigned getdigit(double _x, int _place) {
-	unsigned digit;
+size_t getdigit(double _x, int _place) {
+	size_t digit;
 
 	_x = fabs(_x);
-	if (abs(_place) > LDBL_DIG || _x > LLONG_MAX)	// Place cannot be over/under place limit; Any 'x' over max llong causes overflow on conversion
+	if (abs(_place) > DBL_DIG || _x > LLONG_MAX)	// Place cannot be over/under place limit; Any 'x' over max llong causes overflow on conversion
 		return 0;	// Digits that cannot be printed
 	for (int nchr = 0; nchr <= abs(_place); _place > 0 ? (_x /= 10) : (_x *= 10), nchr++)
 		digit = ((long long int) _x - (long long int) (_x / 10) * 10);
 	return digit;
 }
 
-unsigned nplaces(double _x) {
+size_t nplaces(double _x) {
 	_x = fabs(_x);	// log of negative is undefined
 	if (_x == 0)	// log of zero is undefined
 		return 1;
@@ -239,24 +248,58 @@ int chk_parenth(const char *_expr) {
 }
 
 int chk_syntax(const char *_expr) {
-	char chr;
-	int nsingle = 0, ndouble = 0;
+	char chr,
+		 lead = 0,	// Last non-space 
+		 trail = 0,	// Next non-space
+		 last = 0,	// Immediate last
+		 next = 1;	// Immediate next
+	size_t nsingle = 0, ndouble = 0, npoint = 0, nerr;
 
-	for (int nchr = 0; (chr = _expr[nchr]); nchr++) {
+	#ifdef DEBUG
+	puts("\e[4mchk_syntax\e[24m");
+	#endif
+	for (size_t nchr = 0; (chr = _expr[nchr]); nchr++) {
+		#ifdef DEBUG
+		printf("single: %ld\tdouble: %ld\tchr: %c\n", nsingle, ndouble, chr);
+		#endif
+		if (nchr)
+			last = _expr[nchr - 1];
+		if (nchr != strlen(_expr))
+			next = _expr[nchr + 1];
+		if (next != 0)
+			for (int i = nchr + 1; _expr[i]; i++)
+				if(!isspace(_expr[i])) {
+					trail = _expr[i];
+					break;
+				}
 		if (isdigit(chr) || chr == '(') // Reset single/double operator count
 			nsingle = 0, ndouble = 0;
-		else if (isin(chr, OPERS_S))
-			nsingle++;
-		else if (isin(chr, OPERS_D) && (chr == _expr[nchr - 1] || chr == _expr[nchr + 1]))
+		else if (isin(chr, DBLS) && (chr == last && isin(last, DBLS) || chr == next && isin(next, DBLS))) {
+			if (chr != '!' && isdigit(lead) || chr == '!' && trail == '!' && !isdigit(lead) && lead != '.')	// Operator is obstruction
+				return nchr;	
+			if (chr == '!' && lead == '!' && !isdigit(trail) && trail != '.') {	// Operator isn't obstruction; find obstruction
+				for (nerr = nchr; (chr = _expr[nerr]) != trail; nerr++);
+				return nerr;
+			}
 			ndouble++;
-		if (nsingle == 2 || ndouble == 3 ||			/* Extra operator ||					*/
-			!isin(chr, VAL_CHRS) && !isspace(chr))	/* Is not a valid character nor a space */
+		}
+		else if (isin(chr, OPERS))
+			nsingle++;
+		if (!isdigit(chr) && chr != '.')
+			npoint = 0;
+		else if (chr == '.')
+			npoint++;
+		if (nsingle == 2 || ndouble == 3 ||	npoint == 2 ||	/* Extra operator or comma ||			   */
+			!isin(chr, VAL_CHRS) && !isspace(chr) ||		/* Is not a valid character nor a space || */
+			isdigit(chr) && isdigit(lead) && lead != last)	/* Two numbers side-by-side w/o operator   */
 			return nchr;
+		if (!isspace(chr))
+			lead = chr;
 	}
 	return CHK_PASS;
 }
 
-int getlim(char *_expr, unsigned _operpos, char _dir) {
+int getlim(char *_expr, size_t _operpos, char _dir) {
 	bool reading = false, read_digit;
 	char chr;
 	int lim = -1, nchr;
@@ -284,7 +327,7 @@ int getlim(char *_expr, unsigned _operpos, char _dir) {
 	return lim;
 }
 
-unsigned fobst(const char *_expr, unsigned _operpos, unsigned _llim, unsigned _rlim) {
+size_t fobst(const char *_expr, size_t _operpos, size_t _llim, size_t _rlim) {
 	bool l_obstr = false, r_obstr = false;
 	char chr, oper = _expr[_operpos];
 	int nchr = _operpos,
@@ -299,7 +342,7 @@ unsigned fobst(const char *_expr, unsigned _operpos, unsigned _llim, unsigned _r
 	while (off < (int) strlen(_expr)) {
 		if (nchr >= _llim && nchr <= _rlim) {
 			chr = _expr[nchr];
-			if (isin(chr, OPERS_A) && chr != oper)
+			if (isin(chr, OPERS) && chr != oper && chr != '-')
 				off < 0 ? (l_obstr = true) : (r_obstr = true);
 		}
 		off <= 0 ? (off = -(off - 1)) : (off = -off);
@@ -319,11 +362,14 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 	char chr,
 		*result_str = NULL, // Operation result
 		*expr = (char *) calloc(strlen(_expr) + 1, sizeof(char)); // Modifiable expression
-	unsigned llim, rlim; // Left- and right-hand limits of operation
+	size_t llim, rlim; // Left- and right-hand limits of operation
 	int nchr;
 	double result, // Operation result;	Final return value
 		   lval, rval; // Left and right values of operation
 
+	#ifdef DEBUG
+	printf("\n\e[4mevaluate\e[24m\n%s\n", _expr);
+	#endif
 	if (expr == NULL)
 		return DBL_FAIL;
 	strcpy(expr, _expr); // Copy constant expression to modifiable one
@@ -334,13 +380,18 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 			INIT_VALS();	// Retrieves rval, lval, rlim, and llim
 			if (fobst(expr, nchr, llim, rlim) & OBS_R)	// Operation cannot continue if another operator is in the way
 				continue;
+			if (isequal(rval, DBL_OVER) || isequal(lval, DBL_OVER))
+				goto overflow_err;
+			if (isequal(rval, DBL_FAIL) || isequal(lval, DBL_FAIL))
+				goto getval_err;
 			if (rlim == INT_FAIL)
 				goto opermiss_err;
 			result = chr == '+' ? rval + 1 : -rval - 1;					/* If increment: '++x' -> '+(x + 1)'  */
 			llim = nchr;	// Left limit of operation is operator		/* If decrement: '--x' -> '-(-x + 1)' */
 			INIT_EXPR();	// Retrieves new expression
-			if (DEBUG)
+			#ifdef DEBUG
 				puts(expr);
+			#endif
 		}
 	}
 	for (nchr = 0; (chr = expr[nchr]); nchr++) { // Unary root/Binary root
@@ -349,6 +400,10 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 			if (expr[nchr + 1] == '!') {
 				if (fobst(expr, nchr, llim, rlim) & (OBS_L & OBS_R)) // Needs both sides of operator
 					continue;
+			if (isequal(rval, DBL_OVER) || isequal(lval, DBL_OVER))
+				goto overflow_err;
+			if (isequal(rval, DBL_FAIL) || isequal(lval, DBL_FAIL))
+				goto getval_err;
 				if (rlim == INT_FAIL || llim == INT_FAIL)
 					goto opermiss_err;
 				if (rval < 0 && (int) lval % 2 == 0)
@@ -367,8 +422,9 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 				result = sqrt(rval);
 			}
 			INIT_EXPR();
-			if (DEBUG)
-				puts(expr);
+			#ifdef DEBUG
+			puts(expr);
+			#endif
 		}
 	}
 	for (nchr = 0; (chr = expr[nchr]); nchr++) { // Exponent
@@ -376,14 +432,17 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 			INIT_VALS();
 			if (fobst(expr, nchr, llim, rlim) & (OBS_L & OBS_R))
 				continue;
+			if (isequal(rval, DBL_OVER) || isequal(lval, DBL_OVER))
+				goto overflow_err;
 			if (isequal(rval, DBL_FAIL) || isequal(lval, DBL_FAIL))
 				goto getval_err;
 			if (rlim == INT_FAIL || llim == INT_FAIL)
 				goto opermiss_err;
 			result = pow(lval, rval);
 			INIT_EXPR();
-			if (DEBUG)
-				puts(expr);
+			#ifdef DEBUG
+			puts(expr);
+			#endif
 		}
 	}
 	for (nchr = 0; (chr = expr[nchr]); nchr++) { // Multiplication/Division/Remainder
@@ -391,6 +450,8 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 			INIT_VALS();
 			if (fobst(expr, nchr, llim, rlim) & (OBS_L & OBS_R))
 				continue;
+			if (isequal(rval, DBL_OVER) || isequal(lval, DBL_OVER))
+				goto overflow_err;
 			if (isequal(rval, DBL_FAIL) || isequal(lval, DBL_FAIL))
 				goto getval_err;
 			if (rlim == INT_FAIL || llim == INT_FAIL)
@@ -408,8 +469,9 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 					goto modulus_err;
 			}
 			INIT_EXPR();
-			if (DEBUG)
-				puts(expr);
+			#ifdef DEBUG
+			puts(expr);
+			#endif
 		}
 	}
 	for (nchr = 0; (chr = expr[nchr]); nchr++) { // Addition/Subtraction/Unary plus/Unary minus
@@ -419,6 +481,8 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 			INIT_VALS();
 			if (fobst(expr, nchr, llim, rlim) & OBS_R)
 				continue;
+			if (isequal(rval, DBL_OVER) || isequal(lval, DBL_OVER))
+				goto overflow_err;
 			if (isequal(rval, DBL_FAIL) || isequal(lval, DBL_FAIL))
 				goto getval_err;
 			if (rlim == INT_FAIL)
@@ -427,45 +491,62 @@ double evaluate(const char *_expr) {	// Dynamic memory: result_str, expr
 				llim = nchr;
 			result = chr == '+' ? lval + rval : lval - rval;
 			INIT_EXPR();
-			if (DEBUG)
-				puts(expr);
+			#ifdef DEBUG
+			puts(expr);
+			#endif
 		}
 	}
-
-	while (strcspn(expr, OPERS_A + 2) != strlen(expr)) {
-		puts("gate");
-		result_str = dtos(evaluate(expr), LDBL_DIG);
+	while (strcspn(expr, OPERS + 2) != strlen(expr)) {
+		if ((result_str = dtos(evaluate(expr), DBL_DIG)) == NULL)
+			goto dtos_err;
+		if ((result_str = dtos(evaluate(expr), DBL_DIG)) == STR_OVER)
+			goto overflow_err;
 		free(expr);
 		expr = result_str;
 	}
-	result = stod(expr);
+	if (isequal(result = stod(expr), DBL_OVER))
+		goto overflow_err;
 	free(expr);
 	return result;
 
 	opermiss_err:
 		free(expr);
-		fail("Missing operand");
+		fail("Missing operand"); // Exits program if using command-line
+		return DBL_FAIL;
 	evenroot_err:
 		free(expr);
 		fail("Even root of negative number");
+		return DBL_FAIL;
 	zeroroot_err:
 		free(expr);
 		fail("Root cannot be zero");
+		return DBL_FAIL;
 	divzero_err:
 		free(expr);
 		fail("Divide by zero");
+		return DBL_FAIL;
 	modulus_err:
 		free(expr);
 		fail("Remainder takes integers only");
+		return DBL_FAIL;
 	getval_err:
 		free(expr);
 		fail("Internal error (evaluate.getval)");
+		return DBL_FAIL;
+	dtos_err:
+		free(expr);
+		fail("Internal error (evaluate.dtos)");
+		return DBL_FAIL;
+	overflow_err:
+		free(expr);
+		fail("Number too large");
+		return DBL_FAIL;
 }
 
-double getval(char *_expr, unsigned _operpos, char _dir) {	// Dynamic memory: val_str
+double getval(char *_expr, size_t _operpos, char _dir) {	// Dynamic memory: val_str
 	bool reading = false;
 	char chr, *val_str = NULL;
-	unsigned val_low, val_high;	// Range of indices in which value is located
+	size_t val_low, val_high;	// Range of indices in which value is located
 	int nchr;
 	double num;
 
@@ -486,12 +567,14 @@ double getval(char *_expr, unsigned _operpos, char _dir) {	// Dynamic memory: va
 		val_low = 0;
 	else if (chr == 0)	// Reached end of expression
 		val_high = strlen(_expr) - 1;
-
 	if ((val_str = popsub(_expr, val_low, val_high)) == NULL) {
 		free(_expr);
 		return DBL_FAIL;
 	}
-	num = stod(val_str);
+	if ((num = stod(val_str)) == DBL_FAIL) {
+		free(val_str);
+		return DBL_OVER;
+	}
 	free(val_str);
 	return num; // Convert value string to value
 }
@@ -502,7 +585,7 @@ double stod(const char *_s) { // Equivalent to atof(), except that it does not p
 	int nchr;
 	double num = 0, placeval = 0.1;
 
-	for (nchr = 0; (chr = _s[nchr]) && nchr <= LDBL_DIG + is_negative + read_decim; nchr++) { // LDBL_DIG is accurate digit limit
+	for (nchr = 0; (chr = _s[nchr]) && nchr <= DBL_DIG + is_negative + read_decim; nchr++) { // DBL_DIG is accurate digit limit
 		if (chr == '-' && !is_negative && !reading)
 			is_negative = true;
 		else if (chr == '.' && !read_decim && !reading)
@@ -516,8 +599,8 @@ double stod(const char *_s) { // Equivalent to atof(), except that it does not p
 			placeval /= 10;
 		}
 	}
-	if (nchr > LDBL_DIG && !read_decim)
-		fail("Overflow error");
+	if (nchr > DBL_DIG && !read_decim)
+		return DBL_OVER;
 	if (is_negative)
 		num *= -1;
 	return num;
