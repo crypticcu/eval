@@ -33,19 +33,33 @@ extern char *program_invocation_name;
 		fail("Internal error (evaluate.pushsub)");\
 	}
 
+/* Checks for overflow, getval() failure, and missing operand(s) in evaluate()
+ * Requires needed values, LEFT or RIGHT */
+#define CHK_VALS(reqval)\
+	if (isequal(rval, DBL_OVER) || isequal(lval, DBL_OVER))\
+		goto overflow_err;\
+	if (isequal(rval, DBL_FAIL) || isequal(lval, DBL_FAIL))\
+		goto getval_err;\
+	if (reqval & RIGHT && rlim == INT_FAIL)\
+		goto opermiss_err;\
+	if (reqval & LEFT && llim == INT_FAIL)\
+		goto opermiss_err
+
 #define INT_FAIL	INT_MAX		// Passed by [type]-returning functions on failure
 #define DBL_FAIL	DBL_MAX
 #define DBL_OVER	FLT_EPSILON	// Passed by [type]-returning functions on overflow
 #define STR_OVER	"..."
 #define CHK_PASS	-1			// Used by chk_parenth() and chk_syntax(); Indicates valid syntax
-#define OBS_R		1			// Used by fobst(); Indicates obstruction in operation
-#define OBS_L		2
-//#define DEBUG					// Define to turn on debugging mode
+#define RIGHT		1
+#define LEFT		2
+// #define DEBUG				// If defined, prints debug info
 
 extern bool CMD_LINE;
-static const char *VAL_CHRS = "+-!^*/%.()\n1234567890",
+static const char *VAL_CHRS = "+-!^*/%.()\n1234567890'",
 		  		  *OPERS = "+-!^*/%",
-		  		  *DBLS = "+-!";		// Double operators
+		  		  *DBLS = "+-!",	// Can be double
+				  *UNRY = "+-!",	// Can be unary
+				  *BNRY = "^*/%";	// Can only be binary
 
 /* Prints error message and exits program */
 extern void fail(const char *_desc);
@@ -85,10 +99,6 @@ extern bool isnumer(char _c);
 /* Determines whether a parenthesis indicates multiplication */
 extern bool toast(const char *_expr, size_t _parpos);
 
-/* Returns OBS_R or OBS_L depending on type of obstruction(s)
- * If none are found, returns 0 */
-extern size_t isclr(const char *_expr, size_t _operpos, size_t _low, size_t _high);
-
 /* Get digit at given place */
 extern size_t getdigit(double _x, int _place);
 
@@ -107,7 +117,7 @@ extern int chk_syntax(const char *_expr);
  * Returns INT_FAIL if invalid direction or operand is missing */
 extern int getlim(char *_expr, size_t _operpos, char _dir);
 
-/* Returns number of indices operator is from closest obstruction in operation
+/* Returns OBS_R or OBS_L depending on type of obstruction(s)
  * If none are found, returns 0
  * Returns INT_FAIL on failure */
 extern size_t fobst(const char *_expr, size_t _operpos, size_t _llim, size_t _rlim);

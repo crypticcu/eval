@@ -10,7 +10,8 @@ void print_help(void);
 
 int main(int argc, char *argv[]) {
 	char *expr = NULL, *swap = NULL;
-	size_t bufsize = 999, ndec;
+	size_t bufsize = 999,	// Maximum input size
+	ndec;					// Number of decimal places
 	double result;
 
 	CMD_LINE = true;
@@ -20,18 +21,23 @@ int main(int argc, char *argv[]) {
 	}
 
 	command_line:
-	if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) { // Interpret help flag if present
-		if (argc == 2)	print_help();
-		else			fail("Incorrect flag usage");
+	if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {	// Interpret help flag if present
+		if (argc == 2)
+			print_help();
+		else
+			fail("Incorrect flag usage");
 	}
 	if ((expr = simplify(argv[1], 0)) == NULL) {
 		putchar('\n');
 		exit(EXIT_FAILURE);
 	}
 	if (argc == 3) {	// Interpret decimal count if present
-		if (strspn(argv[2], VAL_CHRS + 10) == strlen(argv[2]))	ndec = atoi(argv[2]);	/* Decimal count contains only digits	 */
-		else													goto invdec_err;		/* VAL_CHRS[11->20] = '1', ..., '9', '0' */
-		if (ndec > DBL_DIG)										goto invdec_err;
+		if (strspn(argv[2], VAL_CHRS + 10) == strlen(argv[2]))	/* Decimal count contains only digits	 */
+			ndec = atoi(argv[2]);								/* VAL_CHRS[11->20] = '1', ..., '9', '0' */
+		else
+			goto invdec_err;
+		if (ndec > DBL_DIG)
+			goto invdec_err;
 	}
 	#ifdef DEBUG
 	puts("\n\e[4mresult\e[24m");
@@ -51,7 +57,7 @@ int main(int argc, char *argv[]) {
 			free(expr);
 			break;
 		}
-		swap = expr;
+		swap = expr;	// Swap causes 'still reachable' error in valgrind
 		expr = simplify(expr, 0);
 		free(swap);
 		if (expr != NULL) {
@@ -70,7 +76,8 @@ int main(int argc, char *argv[]) {
 void print_help(void) {
 	printf("Usage: %s [EXPRESSION] [ROUND]\n", PROG_NAME);
 	puts("High-accuracy terminal calulator");
-	puts("This software falls under the GNU Public License\n");
+	puts("Encapsulation within apostrophes (') is recommended");
+	puts("This software falls under the GNU Public License v3.0\n");
 
 	puts("++, --     ++x, --x         Increment, decrement");
 	puts("!, !!      !x, y!!x         Square root, other root        ↑ Higher precedence");
