@@ -112,7 +112,7 @@ int main(int argc, char *argv[]) {
 }
 
 void print_help(void) {
-	printf("Usage: %s [EXPRESSION] [ROUND]\n", PROG_NAME);
+	printf("Usage: %s [FLAGS] [EXPRESSION]\n", PROG_NAME);
 	puts("High-accuracy terminal calculator");
 	puts("Encapsulation within apostrophes (') is recommended");
 	puts("This software falls under the GNU Public License v3.0\n");
