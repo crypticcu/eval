@@ -3,17 +3,8 @@
 #ifndef PARSE_H
 #define PARSE_H
 
-#ifdef __GNU_LIBRARY__
-#include <err.h>
-#define PROG_NAME\
-	program_invocation_name[1] == '/' ?\
-	program_invocation_name + 2 :\
-	program_invocation_name				// Ignore './' if included 
 
-extern char *program_invocation_name;
-#else
-#define PROG_NAME	"eval"
-#endif /* #ifdef __GNU_LIBRARY__ */
+/* FUNCTION-LIKE MACROS **************************************************************************/
 
 /* Initializes left- and right-hand values in evaluate() */
 #define INIT_VALS()\
@@ -45,23 +36,58 @@ extern char *program_invocation_name;
 	if (reqval & LEFT && llim == INT_FAIL)\
 		goto opermiss_err
 
-#define INT_FAIL	INT_MAX		// Passed by [type]-returning functions on failure
+/* MACROS ****************************************************************************************/
+
+/* Debug */
+#define DEBUG		0			// 1 = Debugging on
+
+/* Error Handling */
+#define INT_FAIL	INT_MAX		// Passed on failure
 #define DBL_FAIL	DBL_MAX
-#define DBL_OVER	FLT_EPSILON	// Passed by [type]-returning functions on overflow
-#define STR_OVER	"..."
-#define CHK_PASS	-1			// Used by chk_parenth() and chk_syntax(); Indicates valid syntax
+#define STR_OVER	"..."		// Passed on overflow
+#define DBL_OVER	FLT_EPSILON
+
+/* Program name */
+#ifdef __GNU_LIBRARY__
+#include <err.h>
+#define PROG_NAME\
+	program_invocation_name[1] == '/' ?\
+	program_invocation_name + 2 :\
+	program_invocation_name		// Ignore './' if included 
+
+extern char *program_invocation_name;
+#else
+#define PROG_NAME	"eval"
+#endif /* #ifdef __GNU_LIBRARY__ */
+
+/* Misc */
+#define CHK_PASS	-1			// Indicates valid syntax
 #define RIGHT		1
 #define LEFT		2
-// #define DEBUG				// If defined, prints debug info
 
-extern bool CMD_LINE;
-static const char *VAL_CHRS = "+-!^*/%.()\n1234567890'",
-		  		  *OPERS = "+-!^*/%",
-		  		  *DBLS = "+-!",	// Can be double
-				  *UNRY = "+-!",	// Can be unary
-				  *BNRY = "^*/%";	// Can only be binary
+/* VARIABLES *************************************************************************************/
 
-/* Prints error message and exits program */
+typedef const struct {
+	char *valid,
+		 *digits,
+		 *opers,
+		 *unary,
+		 *binary;
+} _character_sets;
+
+typedef struct {
+	bool help,
+		 round;
+} _flags;
+
+extern _character_sets chrsets;
+extern _flags flags;
+extern bool cmd_line;
+
+/* FUNCTIONS *************************************************************************************/
+
+/* Prints error message 
+ * Exits program if in command-line interface */
 extern void fail(const char *_desc);
 
 /* Prints string with character at given position underlined */
@@ -132,7 +158,8 @@ extern double evaluate(const char *_expr);
 extern double getval(char *_expr, size_t _operpos, char _dir);
 
 /* Returns double representation of string
- * Returns DBL_FAIL on overflow */
+ * Returns DBL_FAIL if string does not contain double
+ * Returns DBL_OVER on overflow */
 extern double stod(const char *_s);
 
 #endif /* #ifndef PARSE_H */

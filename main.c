@@ -4,47 +4,82 @@
 #include <string.h>
 #include "eval.h"
 
-bool CMD_LINE; // Using command-line interface?
+_character_sets chrsets = {
+	"+-!^*/%%.()'\n1234567890",	// Valid characters
+	"1234567890",				// Digits
+	"+-!^*/%%",					// Operators
+	"+-!",						// Unary operators
+	"^*/%%"						// Binary operators
+};
+
+_flags flags = {
+	false,						// Show help				-h
+	false						// Round to # of decimals	-d
+};
+
+bool cmd_line = true;	// Using command-line interface?
 
 void print_help(void);
 
 int main(int argc, char *argv[]) {
-	char *expr = NULL, *swap = NULL;
-	size_t bufsize = 999,	// Maximum input size
-	ndec;					// Number of decimal places
-	double result;
+	bool invalid_flag = false, invalid_decplace = false, help_only = false;
+	char chr, *expr = NULL, *swap = NULL;
+	size_t bufsize = 999;		// Maximum input size
+	double result, ndec = 6;	// Number of decimal places; Default is 6 (same as printf)
 
-	CMD_LINE = true;
 	if (argc == 1) {
-		CMD_LINE = false;
+		cmd_line = false;
 		goto interactive;
 	}
 
 	command_line:
-	if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {	// Interpret help flag if present
-		if (argc == 2)
-			print_help();
-		else
-			fail("Incorrect flag usage");
+	if (argc == 2 && !strcmp(argv[argc - 1], "-h"))
+		help_only = true;
+	if (*argv[argc - 1] == '-' &&  !help_only)	// Final argument cannot be flag, unless it is '-h' flag
+		goto invflag_err;
+	for (size_t nstr = 1; nstr < argc && !invalid_flag; nstr++) {	// Get flags
+		if (*argv[nstr] == '-') {
+			for (size_t nchr = 1; (chr = *(argv[nstr] + nchr)); nchr++) {
+				switch (chr) {
+				case 'h':
+					flags.help = true;
+					break;
+				case 'd':
+					flags.round = true;
+					if (nstr != argc - 2) {	// '-d' place takes argument afterward
+						if ((ndec = stod(argv[nstr + 1])) < 0 || ndec > DBL_DIG || !isequal(ndec, (int) ndec))
+							invalid_decplace = true;
+					} else
+						invalid_flag = true;
+					break;
+				default:
+					invalid_flag = true;
+				}
+			}
+
+		}
 	}
-	if ((expr = simplify(argv[1], 0)) == NULL) {
-		putchar('\n');
+
+	if (invalid_flag)
+		goto invflag_err;
+	if (invalid_decplace)
+		goto invdec_err;
+	if (flags.help) {
+		print_help();
+		if (help_only)
+			exit(EXIT_SUCCESS);
+		putchar('\n');	// Seperate help page from answer
+	}
+	if ((expr = simplify(argv[argc - 1], 0)) == NULL) {
+		putchar('\n');	// Seperate error message from terminal cursor
 		exit(EXIT_FAILURE);
 	}
-	if (argc == 3) {	// Interpret decimal count if present
-		if (strspn(argv[2], VAL_CHRS + 10) == strlen(argv[2]))	/* Decimal count contains only digits	 */
-			ndec = atoi(argv[2]);								/* VAL_CHRS[11->20] = '1', ..., '9', '0' */
-		else
-			goto invdec_err;
-		if (ndec > DBL_DIG)
-			goto invdec_err;
-	}
-	#ifdef DEBUG
+	#if DEBUG
 	puts("\n\e[4mresult\e[24m");
 	#endif
 	result = stod(expr);
 	free(expr);
-	puts(expr = dtos(result, argc == 3 ? ndec : 6));	// 6 = default number of decimals shown
+	puts(expr = dtos(result, ndec));	// 6 = default number of decimals shown
 	free(expr);
 	return EXIT_SUCCESS;
 
@@ -69,13 +104,16 @@ int main(int argc, char *argv[]) {
 	}
 	return EXIT_SUCCESS;
 
+	invflag_err:
+		fail("Invalid flag usage");
 	invdec_err:
-		fail("Invalid decimal count");
+		fail("Invalid # of decimals");
+
 }
 
 void print_help(void) {
 	printf("Usage: %s [EXPRESSION] [ROUND]\n", PROG_NAME);
-	puts("High-accuracy terminal calulator");
+	puts("High-accuracy terminal calculator");
 	puts("Encapsulation within apostrophes (') is recommended");
 	puts("This software falls under the GNU Public License v3.0\n");
 
@@ -90,5 +128,4 @@ void print_help(void) {
 
 	puts("GitHub repository: https://github.com/crypticcu/eval");
 	puts("Report bugs to:    cryptic.cu@protonmail.com");
-	exit(EXIT_SUCCESS);
 }
