@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
 			}
 			expr[strlen(expr) - 1] = '\0';	// Remove newline
 			swap = expr;	// Swap causes 'still reachable' error in valgrind
-			expr = parse(expr, NULL);
+			expr = parse(expr, ndec, NULL);
 			free(swap);
 			if (expr) {
 				puts(expr);
@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
 			return EXIT_SUCCESS;
 		putchar('\n');	// Seperate help page from answer
 	}
-	if (!(expr = parse(expr, NULL))) {
+	if (!(expr = parse(expr, ndec, NULL))) {
 		putchar('\n');	// Seperate error message from terminal cursor
 		return EXIT_FAILURE;
 	}

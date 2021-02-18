@@ -7,7 +7,7 @@
 #include "status.h"
 #include "util.h"
 
-char *parse(const char *expression, void *null) {
+char *parse(const char *expression, unsigned sig, void *null) {
 	bool read_parenth = false;
 	char *sub, *expr, chr;
 	size_t par_low, par_high, ignore, index;
@@ -35,7 +35,7 @@ char *parse(const char *expression, void *null) {
 					free(expr);
 					return NULL;
 				}
-				if (!parse_expr(&sub)) {
+				if (!parse_expr(&sub, sig)) {
 					free(expr);
 					free(sub);
 					return NULL;
@@ -48,7 +48,7 @@ char *parse(const char *expression, void *null) {
 		} else if (chr == '(') {
 			if (read_parenth) {
 				sub = expr;	// Swap causes 'still reachable' error in valgrind
-				expr = parse(expr, (void *) index);
+				expr = parse(expr, sig, (void *) index);
 				free(sub);
 				if (!expr)
 					return NULL;
@@ -58,7 +58,7 @@ char *parse(const char *expression, void *null) {
 			}
 		}
 	}
-	if(!parse_expr(&expr)) {
+	if(!parse_expr(&expr, sig)) {
 		free(expr);
 		return NULL;
 	}
@@ -73,7 +73,7 @@ char *parse(const char *expression, void *null) {
 	return expr;
 }
 
-char *parse_expr(char **expr_addr) {
+char *parse_expr(char **expr_addr, unsigned sig) {
 	char *expr;
 	size_t ignore = 0;
 
@@ -84,21 +84,21 @@ char *parse_expr(char **expr_addr) {
 			ignore++;
 		if (ignore == strlen(expr) || strcspn(expr + ignore, chrsets.opers) == strlen(expr + ignore))
 			break;
-		if (!(parse_oper(&expr, "++")))	return NULL;
-		if (!(parse_oper(&expr, "--")))	return NULL;
-		if (!(parse_oper(&expr, "!!")))	return NULL;
-		if (!(parse_oper(&expr,  "!")))	return NULL;
-		if (!(parse_oper(&expr,  "^")))	return NULL;
-		if (!(parse_oper(&expr,  "*")))	return NULL;
-		if (!(parse_oper(&expr,  "/")))	return NULL;
-		if (!(parse_oper(&expr,  "%")))	return NULL;
-		if (!(parse_oper(&expr,  "+")))	return NULL;
-		if (!(parse_oper(&expr,  "-")))	return NULL;
+		if (!(parse_oper(&expr, "++", sig)))	return NULL;
+		if (!(parse_oper(&expr, "--", sig)))	return NULL;
+		if (!(parse_oper(&expr, "!!", sig)))	return NULL;
+		if (!(parse_oper(&expr,  "!", sig)))	return NULL;
+		if (!(parse_oper(&expr,  "^", sig)))	return NULL;
+		if (!(parse_oper(&expr,  "*", sig)))	return NULL;
+		if (!(parse_oper(&expr,  "/", sig)))	return NULL;
+		if (!(parse_oper(&expr,  "%", sig)))	return NULL;
+		if (!(parse_oper(&expr,  "+", sig)))	return NULL;
+		if (!(parse_oper(&expr,  "-", sig)))	return NULL;
 	}
 	return (*expr_addr = expr);
 }
 
-char *parse_oper(char **expr_addr, const char *oper) {
+char *parse_oper(char **expr_addr, const char *oper, unsigned sig) {
 	char *expr, *sub, chr;
 	int reqval;
 	size_t opernum;
@@ -197,7 +197,7 @@ char *parse_oper(char **expr_addr, const char *oper) {
 				result = rval < 0 ? -pow(-rval, 1 / lval) : pow(rval, 1 / lval);
 				break;
 			}
-			if (!(sub = dtos(result, maxdec))) {
+			if (!(sub = dtos(result, sig))) {
 				return NULL;
 			}
 			if (!(expr = pushsub(expr, sub, llim, rlim))) {
