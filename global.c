@@ -1,17 +1,17 @@
 #include "global.h"
 
-const struct CharacterSets chrsets = {
+const struct CharacterSets ChrSets = {
 	"+-!^*/%.()1234567890\'",	// Valid characters
 	"+-!^*/%",					// Operators
 	"+-!",						// Double operators
 };
 
-struct Flags flags = {
+struct ProgramFlags Flags = {
 	false,						// Show help				-h
 	false,						// Round to # of decimals	-d
 	false						// Radian mode				-r
 };
 
-bool cmdln;
-unsigned maxdec;
-ssize_t maxln;
+bool CmdLn;
+unsigned MaxDec;
+ssize_t MaxLn;

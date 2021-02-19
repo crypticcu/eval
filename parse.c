@@ -8,34 +8,34 @@
 #include "util.h"
 
 char *parse(const char *expression, unsigned sig, void *null) {
+	char *sub, chr;
+	char *expr;	// Dynamic buffer
 	bool read_parenth = false;
-	char *sub, *expr, chr;
 	size_t par_low, par_high, ignore, index;
 
-	if (expression == NULL)
+	if (!(expr = strdup(expression))) {
+		errstat(ERR_INTERNAL);
 		return NULL;
-	expr = strdup(expression);
-	if (expr == NULL)
-		return NULL;
-	if (!null) {	// Check syntax (once)
+	}
+	if (!null) {	// Check syntax once
 		if (chk_syntax(expression) != PASS || chk_parenth(expression) != PASS) {
 			free(expr);
 			return NULL;
 		}
 	}
-	for (index = (size_t) null; index < strlen(expr); index++) {	// Check index before retrieving character (dynamic buffer)
+	for (index = (size_t) null; index < strlen(expr); index++) {
 		chr = expr[index];
 		if (chr == ')') {
 			par_high = index;
 			read_parenth = false;
-			expr[par_low] = (to_ast(expr, par_low)) ? '*' : ' ';
-			expr[par_high] = (to_ast(expr, par_high)) ? '*' : ' ';
+			expr[par_low] = (toast(expr, par_low)) ? '*' : ' ';
+			expr[par_high] = (toast(expr, par_high)) ? '*' : ' ';
 			if (par_low + 1 < par_high - 1) {	// Ensure parentheses are not empty
 				if (!(sub = popsub(expr, par_low + 1, par_high - 1))) {
 					free(expr);
 					return NULL;
 				}
-				if (!parse_expr(&sub, sig)) {
+				if (!parse_sub(&sub)) {
 					free(expr);
 					free(sub);
 					return NULL;
@@ -47,7 +47,7 @@ char *parse(const char *expression, unsigned sig, void *null) {
 				return expr;
 		} else if (chr == '(') {
 			if (read_parenth) {
-				sub = expr;	// Swap causes 'still reachable' error in valgrind
+				sub = expr;
 				expr = parse(expr, sig, (void *) index);
 				free(sub);
 				if (!expr)
@@ -58,7 +58,7 @@ char *parse(const char *expression, unsigned sig, void *null) {
 			}
 		}
 	}
-	if(!parse_expr(&expr, sig)) {
+	if (!parse_sub(&expr)) {
 		free(expr);
 		return NULL;
 	}
@@ -66,52 +66,54 @@ char *parse(const char *expression, unsigned sig, void *null) {
 	if (expr[ignore] == '+')
 		ignore++;
 	if (ignore > 0) {
-		sub = strdup(expr + ignore);
+		if (!(sub = strdup(expr + ignore))) {
+			errstat(ERR_INTERNAL);
+			return NULL;
+		}
 		free(expr);
 		expr = sub;
 	}
+	sub = expr;
+	expr = roundnum(expr, sig);
+	free(sub);
 	return expr;
 }
 
-char *parse_expr(char **expr_addr, unsigned sig) {
-	char *expr;
+char *parse_sub(char **expr_addr) {
+	char *expr = *expr_addr;	// Dynamic buffer
 	size_t ignore = 0;
 
-	expr = *expr_addr;
 	while (true) {
 		ignore = strspn(expr, " ");
 		if (isparity(expr[ignore]))
 			ignore++;
-		if (ignore == strlen(expr) || strcspn(expr + ignore, chrsets.opers) == strlen(expr + ignore))
+		if (ignore == strlen(expr) || strcspn(expr + ignore, ChrSets.opers) == strlen(expr + ignore))
 			break;
-		if (!(parse_oper(&expr, "++", sig)))	return NULL;
-		if (!(parse_oper(&expr, "--", sig)))	return NULL;
-		if (!(parse_oper(&expr, "!!", sig)))	return NULL;
-		if (!(parse_oper(&expr,  "!", sig)))	return NULL;
-		if (!(parse_oper(&expr,  "^", sig)))	return NULL;
-		if (!(parse_oper(&expr,  "*", sig)))	return NULL;
-		if (!(parse_oper(&expr,  "/", sig)))	return NULL;
-		if (!(parse_oper(&expr,  "%", sig)))	return NULL;
-		if (!(parse_oper(&expr,  "+", sig)))	return NULL;
-		if (!(parse_oper(&expr,  "-", sig)))	return NULL;
+		if (!(parse_oper(&expr, "++")))	return NULL;
+		if (!(parse_oper(&expr, "--")))	return NULL;
+		if (!(parse_oper(&expr, "!!")))	return NULL;
+		if (!(parse_oper(&expr,  "!")))	return NULL;
+		if (!(parse_oper(&expr,  "^")))	return NULL;
+		if (!(parse_oper(&expr,  "*")))	return NULL;
+		if (!(parse_oper(&expr,  "/")))	return NULL;
+		if (!(parse_oper(&expr,  "%")))	return NULL;
+		if (!(parse_oper(&expr,  "+")))	return NULL;
+		if (!(parse_oper(&expr,  "-")))	return NULL;
 	}
 	return (*expr_addr = expr);
 }
 
-char *parse_oper(char **expr_addr, const char *oper, unsigned sig) {
-	char *expr, *sub, chr;
+char *parse_oper(char **expr_addr, const char *oper) {
+	char *sub, chr;
+	char *expr = *expr_addr;	// Dynamic buffer
 	int reqval;
 	size_t opernum;
 	ssize_t llim, rlim;	// Left- and right-hand limits of operation
 	double lval, rval;	// Left and right values of operation
 	double result;
 	size_t index;
-	expr = *expr_addr;
+
 	opernum = strlen(oper);
-	if (!expr || opernum == 0 || opernum > 2) {
-		errstat(ERR_INTERNAL);
-		return NULL;
-	}
 	switch(oper[0]) {
 	case '^': case '*': case '/': case '%':
 		reqval = LEFT|RIGHT;
@@ -122,18 +124,14 @@ char *parse_oper(char **expr_addr, const char *oper, unsigned sig) {
 	case '!':
 		reqval = opernum == 1 ? RIGHT: LEFT|RIGHT;
 		break;
-	default:
-		return NULL;
 	}
-	for (size_t index = 0; index < strlen(expr); index++) {	// Check index before retrieving character (dynamic buffer)
+	for (size_t index = 0; index < strlen(expr); index++) {
 		chr = expr[index];
 		if (opernum == 1 ? chr == oper[0] : chr == oper[0] && expr[index + 1] == oper[0]) {
-			lval = getval(expr, index, 'l');
-			llim = getlim(expr, index, 'l');
-			rval = getval(expr, opernum == 1 ? index : index + 1, 'r');
-			rlim = getlim(expr, opernum == 1 ? index : index + 1, 'r');
-			if (fobst(expr, index, llim, rlim) & reqval)
-				continue;
+			lval = getval(expr, index, LEFT);
+			llim = getlim(expr, index, LEFT);
+			rval = getval(expr, opernum == 1 ? index : index + 1, RIGHT);
+			rlim = getlim(expr, opernum == 1 ? index : index + 1, RIGHT);
 			if (isequal(rval, FAIL) || isequal(lval, FAIL))
 				return NULL;
 			if (reqval & RIGHT && rlim == FAIL || reqval & LEFT  && llim == FAIL) {
@@ -155,11 +153,11 @@ char *parse_oper(char **expr_addr, const char *oper, unsigned sig) {
 				result = lval / rval;
 				break;
 			case '%':				// Modulus
-				if (!isequal(lval, (ssize_t) lval) || !isequal(rval, (ssize_t) rval)) {
+				if (!isequal(lval, (intmax_t) lval) || !isequal(rval, (intmax_t) rval)) {
 					errstat(ERR_MODULO);
 					return NULL;
 				}
-				result = (ssize_t) lval % (ssize_t) rval;
+				result = (intmax_t) lval % (intmax_t) rval;
 				break;
 			case '+':
 				if (opernum == 1) {	// Add/Unary plus
@@ -186,7 +184,7 @@ char *parse_oper(char **expr_addr, const char *oper, unsigned sig) {
 					lval = 2;
 					llim = index;
 				}
-				if (rval < 0 && (ssize_t) lval % 2 == 0) {
+				if (rval < 0 && (intmax_t) lval % 2 == 0) {
 					errstat(ERR_EVENROOT);
 					return NULL;
 				}
@@ -197,13 +195,10 @@ char *parse_oper(char **expr_addr, const char *oper, unsigned sig) {
 				result = rval < 0 ? -pow(-rval, 1 / lval) : pow(rval, 1 / lval);
 				break;
 			}
-			if (!(sub = dtos(result, sig))) {
+			if (!(sub = dtos(result, MaxDec)))
 				return NULL;
-			}
-			if (!(expr = pushsub(expr, sub, llim, rlim))) {
-				free(sub);
+			if (!(expr = pushsub(expr, sub, llim, rlim)))
 				return NULL;
-			}
 		}
 	}
 	return (*expr_addr = expr);

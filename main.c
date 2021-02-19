@@ -11,21 +11,24 @@
 void phelp(void);
 
 int main(int argc, char *argv[]) {
-	bool help_only = false;
 	char *expr, *swap, chr;
-	double result, ndec = 6;	// Number of decimal places; Default is 6 (same as printf)
+	bool help_only = false;
+	double result;
+	double ndec = 6;	// Number of decimal places; Default is 6 (same as printf)
 
 	if (initstat())
 		return EXIT_FAILURE;
-	maxdec = nplaces(SSIZE_MAX);	// # of accurate digits retained when converting double to integral
-	maxln = SSIZE_MAX;	// Equal to or lower than SIZE_MAX; Alleviates conversion issues
+	MaxDec = nwhole(SSIZE_MAX);	// # of accurate digits retained when converting double to integral
+	if (MaxDec > DBL_DIG)
+		MaxDec = DBL_DIG;
+	MaxLn = SSIZE_MAX;	// Equal to or lower than SSIZE_MAX; Alleviates conversion issues
 
 	/* Interactive */
 	if (argc == 1) {
-		cmdln = false;
+		CmdLn = false;
 		while (true) {
 			printf("> ");
-			if (!(expr = getln(maxln - 1))) {	// Subtract 1 because string length does not count null character
+			if (!(expr = getln(MaxLn))) {	// Subtract 1 because string length does not count null character
 				pstatus();
 				continue;
 			}
@@ -47,8 +50,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	/* Command line */
-	cmdln = true;
-	if (strlen(expr = argv[argc - 1]) >= maxln) {	
+	CmdLn = true;
+	if (strlen(expr = argv[argc - 1]) >= MaxLn) {	
 		errstat(ERR_INPUTSIZE);
 		pstatus();
 		return EXIT_FAILURE;
@@ -61,16 +64,16 @@ int main(int argc, char *argv[]) {
 		pstatus();
 		return EXIT_FAILURE;
 	}
-	for (size_t nstr = 1; nstr < argc; nstr++) {	// Get flags
+	for (size_t nstr = 1; nstr < argc; nstr++) {	// Get Flags
 		for (size_t index = 1; *argv[nstr] == '-' && (chr = *(argv[nstr] + index)); index++) {
 			switch (chr) {
 			case 'h':
-				flags.help = true;
+				Flags.help = true;
 				break;
 			case 'd':
-				flags.round = true;
+				Flags.round = true;
 				if (nstr != argc - 2) {	// '-d' place takes argument afterward
-					if ((ndec = stod(argv[nstr + 1])) < 0 || ndec > maxdec || !isequal(ndec, (ssize_t) ndec)) {
+					if ((ndec = stod(argv[nstr + 1])) < 0 || ndec > MaxDec || !isequal(ndec, (intmax_t) ndec)) {
 						errstat(ERR_INVDEC);
 						pstatus();
 						return EXIT_FAILURE;
@@ -82,7 +85,7 @@ int main(int argc, char *argv[]) {
 				}
 				break;
 			case 'r':
-				flags.radian = true;
+				Flags.radian = true;
 				break;
 			default:
 				errstat(ERR_INVFLAG);
@@ -91,7 +94,7 @@ int main(int argc, char *argv[]) {
 			}
 		}
 	}
-	if (flags.help) {
+	if (Flags.help) {
 		phelp();
 		if (help_only)
 			return EXIT_SUCCESS;
@@ -107,7 +110,7 @@ int main(int argc, char *argv[]) {
 }
 
 void phelp(void) {
-	puts("Usage: parse [FLAGS] [EXPRESSION]    Command-line");
+	puts("Usage: parse [Flags] [EXPRESSION]    Command-line");
 	puts("       parse                         Interactive ");
 	puts("High-accuracy terminal calculator");
 	puts("This software falls under the GNU Public License v3.0\n");

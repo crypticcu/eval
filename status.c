@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "global.h"
 #include "status.h"
 
@@ -8,7 +9,7 @@ int errstat = 0, errln;
 char *errfile, *errstr = NULL;
 size_t errpos;
 
-/* Error string destructor */
+
 void deststat(void) {
 	if (errstr)
 		free(errstr);
@@ -17,7 +18,7 @@ void deststat(void) {
 void pstatus(void) {
 	char *errmsg = NULL;
 
-	if (cmdln)
+	if (CmdLn)
 		printf("parse: ");
 	switch(errstat) {
 	case ERR_INTERNAL:	errmsg = "Internal error";			break;
@@ -31,7 +32,7 @@ void pstatus(void) {
 	case ERR_EVENROOT:	errmsg = "Imaginary result";		break;
 	case ERR_INPUTSIZE: errmsg = "Input size too large";	break;
 	}
-	if (errmsg == NULL)
+	if (!errmsg)
 		return;
 	printf("Error: %s", errmsg);
 	switch(errstat) {
@@ -44,16 +45,12 @@ void pstatus(void) {
 		printf(": ");
 		for (size_t index = 0; index < strlen(errstr); index++) {
 			if (index == errpos)
-				printf("\e[4m");	// Begin underline
+				printf("%s", F_UND);
 			putchar(errstr[index]);
 			if (index == errpos)
-				printf("\e[24m");	// End underline
+				printf("%s", F_CLR);
 		}
 		break;
 	}
 	putchar('\n');
-}
-
-int initstat(void) {
-	return atexit(deststat);
 }

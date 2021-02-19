@@ -5,6 +5,7 @@
 #include <string.h>	// strdup()
 #include "global.h"	// ssize_t (if needed)
 
+/* Sets error status accordingly */
 #define errstat(status)				\
 	if ((status) == ERR_INTERNAL) {	\
 		errln = __LINE__;			\
@@ -12,11 +13,17 @@
 	}								\
 	errstat = (status)
 
-#define invsynt(expr, pos)	\
-	errpos = (pos);			\
-	if(errstr)				\
-		free(errstr);		\
-	errstr = strdup(expr)
+/* Indicates invalid syntax */
+#define invsynt(expr, pos)			\
+	errpos = (pos);					\
+	if(errstr)						\
+		free(errstr);				\
+	if (!(errstr = strdup(expr)))	\
+		errstat(ERR_INTERNAL)
+
+/* Ensures error string is freed after program termination
+ * Returns nonzero value on failure */
+#define initstat()	atexit(deststat)
 
 #define ERR_INTERNAL	1
 #define ERR_INVFLAG		2
@@ -29,21 +36,16 @@
 #define ERR_EVENROOT	9
 #define ERR_INPUTSIZE	10
 
-extern int errstat;
+extern int errstat;		// Error status
+extern char *errfile;	// File in which error occured
+extern int errln;		// Line at which internal error occured
+extern char *errstr;	// String containing invalid syntax
+extern size_t errpos;	// Index in errstr where syntax is invalid
 
-/* For internal errors */
-extern char *errfile;
-extern int errln;
-
-/* For syntax errors */
-extern char *errstr;
-extern size_t errpos;
+/* Error string destructor */
+extern void deststat(void);
 
 /* Prints message according to error status */
 extern void pstatus(void);
 
-/* Ensures error string is freed after program termination
- * Returns nonzero value on failure */
-extern int initstat(void);
-
-#endif /* #ifndef STATUS_H */
+#endif // #ifndef STATUS_H

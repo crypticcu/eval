@@ -1,37 +1,51 @@
 #ifndef SHARED_H
 #define SHARED_H
 
+#define UNIX 	defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+#define GNU		defined(__GNUC__)
+#define WIN64	defined(_WIN64)
+
 #include <stdbool.h>	// bool
 #include <stddef.h>		// size_t
 #include <stdint.h>		// intmax_t
 #include <limits.h>		// INT_MAX
-#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
-#include <unistd.h>
-#endif /* using UNIX */
 
-/* Implement ssize_t if needed */
-#ifndef __ssize_t_defined
-typedef intmax_t	ssize_t;
-#endif
-#ifndef SSIZE_MAX
-#define SSIZE_MAX	INTMAX_MAX
-#endif
+#if UNIX
+#include <unistd.h>		// ssize_t, SSIZE_MAX
+#endif // #if UNIX
 
-enum Statuses	{PASS = -2, FAIL};
-enum Directions {RIGHT = 1, LEFT};
+/* ssize_t portability */
+#if !UNIX
+#if WIN64
+typedef __int64	ssize_t;
+#define SSIZE_MAX	INT64_MAX
+#else
+typedef long	ssize_t;
+#define SSIZE_MAX	LONG_MAX
+#endif // #if WIN64
+#endif // #if !UNIX
 
-struct CharacterSets {
-	char *valid, *opers, *doubl;
-};
-extern const struct CharacterSets chrsets;
+/* Attribute portability */
+#if GNU
+#define attribute(...)	__attribute__((__VA_ARGS__))
+#else
+#define attribute(...)
+#endif // #if GNU
 
-struct Flags {
-	bool help, round, radian;
-};
-extern struct Flags flags;
+#define F_BLD	"\e[1m"	// Bold
+#define F_UND	"\e[4m"	// Underline
+#define F_CLR	"\e[0m"	// Clear formatting
 
-extern bool cmdln;	// Using command-line interface?
-extern unsigned maxdec; // Maximum # of decimals allowed using '-d' flag
-extern ssize_t maxln;
+enum Status		{PASS = -2, FAIL};
+enum Direction	{LEFT, RIGHT, UP, DOWN};
+struct CharacterSets {char *valid, *opers, *doubl;};
+struct ProgramFlags  {bool help, round, radian;};
+typedef enum Direction direct_t;
 
-#endif /* #ifndef SHARED_H */
+extern const struct CharacterSets ChrSets;
+extern struct ProgramFlags Flags;
+extern bool CmdLn;	// Using command-line interface?
+extern unsigned MaxDec; // Maximum # of decimals allowed using '-d' flag
+extern ssize_t MaxLn;
+
+#endif // #ifndef SHARED_H
