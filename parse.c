@@ -14,7 +14,7 @@ char *parse(const char *expression, unsigned sig, void *null) {
 	size_t par_low, par_high, ignore, index;
 
 	if (!(expr = strdup(expression))) {
-		errstat(ERR_INTERNAL);
+		setstat(ERR_INTERNAL);
 		return NULL;
 	}
 	if (!null) {	// Check syntax once
@@ -35,7 +35,7 @@ char *parse(const char *expression, unsigned sig, void *null) {
 					free(expr);
 					return NULL;
 				}
-				if (!parse_sub(&sub)) {
+							if (!parse_sub(&sub)) {
 					free(expr);
 					free(sub);
 					return NULL;
@@ -45,6 +45,7 @@ char *parse(const char *expression, unsigned sig, void *null) {
 			}
 			if (null)
 				return expr;
+			index = 0;
 		} else if (chr == '(') {
 			if (read_parenth) {
 				sub = expr;
@@ -52,6 +53,7 @@ char *parse(const char *expression, unsigned sig, void *null) {
 				free(sub);
 				if (!expr)
 					return NULL;
+				index = 0;
 			} else {
 				read_parenth = true;
 				par_low = index;
@@ -62,21 +64,12 @@ char *parse(const char *expression, unsigned sig, void *null) {
 		free(expr);
 		return NULL;
 	}
-	ignore = strspn(expr, " ");
-	if (expr[ignore] == '+')
-		ignore++;
-	if (ignore > 0) {
-		if (!(sub = strdup(expr + ignore))) {
-			errstat(ERR_INTERNAL);
-			return NULL;
-		}
-		free(expr);
-		expr = sub;
-	}
 	sub = expr;
-	expr = roundnum(expr, sig);
+	expr = pprint(expr);
 	free(sub);
-	return expr;
+	if (!expr)
+		return NULL;
+	return roundnum(expr, sig);
 }
 
 char *parse_sub(char **expr_addr) {
@@ -94,11 +87,11 @@ char *parse_sub(char **expr_addr) {
 		if (!(parse_oper(&expr, "!!")))	return NULL;
 		if (!(parse_oper(&expr,  "!")))	return NULL;
 		if (!(parse_oper(&expr,  "^")))	return NULL;
-		if (!(parse_oper(&expr,  "*")))	return NULL;
 		if (!(parse_oper(&expr,  "/")))	return NULL;
+		if (!(parse_oper(&expr,  "*")))	return NULL;
 		if (!(parse_oper(&expr,  "%")))	return NULL;
-		if (!(parse_oper(&expr,  "+")))	return NULL;
 		if (!(parse_oper(&expr,  "-")))	return NULL;
+		if (!(parse_oper(&expr,  "+")))	return NULL;
 	}
 	return (*expr_addr = expr);
 }
@@ -114,31 +107,31 @@ char *parse_oper(char **expr_addr, const char *oper) {
 	size_t index;
 
 	opernum = strlen(oper);
-	switch(oper[0]) {
-	case '^': case '*': case '/': case '%':
-		reqval = LEFT|RIGHT;
-		break;
-	case '+': case '-':
-		reqval = RIGHT;
-		break;
-	case '!':
-		reqval = opernum == 1 ? RIGHT: LEFT|RIGHT;
-		break;
-	}
 	for (size_t index = 0; index < strlen(expr); index++) {
 		chr = expr[index];
 		if (opernum == 1 ? chr == oper[0] : chr == oper[0] && expr[index + 1] == oper[0]) {
+			switch(oper[0]) {
+			case '^': case '*': case '/': case '%':
+				reqval = LEFT|RIGHT;
+				break;
+			case '+': case '-':
+				reqval = RIGHT;
+				break;
+			case '!':
+				reqval = opernum == 1 ? RIGHT: LEFT|RIGHT;
+			break;
+			}
 			lval = getval(expr, index, LEFT);
 			llim = getlim(expr, index, LEFT);
 			rval = getval(expr, opernum == 1 ? index : index + 1, RIGHT);
 			rlim = getlim(expr, opernum == 1 ? index : index + 1, RIGHT);
 			if (isequal(rval, FAIL) || isequal(lval, FAIL))
 				return NULL;
-			if (reqval & RIGHT && rlim == FAIL || reqval & LEFT  && llim == FAIL) {
-				errstat(ERR_MISSOPER);
+			if (rlim == index || reqval & LEFT  && llim == index) {
+				setstat(ERR_MISSOPER);
 				return NULL;
 			}
-			switch(oper[0]) {
+			switch(chr) {
 			case '^':				// Exponent
 				result = pow(lval, rval);
 				break;
@@ -147,22 +140,16 @@ char *parse_oper(char **expr_addr, const char *oper) {
 				break;
 			case '/':				// Division
 				if (!rval) {
-					errstat(ERR_DIVZERO);
+					setstat(ERR_DIVZERO);
 					return NULL;
 				}
 				result = lval / rval;
 				break;
 			case '%':				// Modulus
-				if (!isequal(lval, (intmax_t) lval) || !isequal(rval, (intmax_t) rval)) {
-					errstat(ERR_MODULO);
-					return NULL;
-				}
-				result = (intmax_t) lval % (intmax_t) rval;
+				result = lval < 0 ? rval - lval : fmod(lval, rval);
 				break;
 			case '+':
-				if (opernum == 1) {	// Add/Unary plus
-					if (llim == FAIL)
-						llim = index;
+				if (opernum == 1) {	// Add
 					result = lval + rval;
 				} else {			// Increment
 					result = rval + 1;
@@ -171,8 +158,6 @@ char *parse_oper(char **expr_addr, const char *oper) {
 				break;
 			case '-':
 				if (opernum == 1) {	// Subtract/Unary minus
-					if (llim == FAIL)
-						llim = index;
 					result = lval - rval;
 				} else {			// Decrement
 					result = rval - 1;
@@ -185,11 +170,11 @@ char *parse_oper(char **expr_addr, const char *oper) {
 					llim = index;
 				}
 				if (rval < 0 && (intmax_t) lval % 2 == 0) {
-					errstat(ERR_EVENROOT);
+					setstat(ERR_IMAGINARY);
 					return NULL;
 				}
 				if (!lval) {
-					errstat(ERR_DIVZERO);
+					setstat(ERR_DIVZERO);
 					return NULL;
 				}
 				result = rval < 0 ? -pow(-rval, 1 / lval) : pow(rval, 1 / lval);
@@ -199,6 +184,9 @@ char *parse_oper(char **expr_addr, const char *oper) {
 				return NULL;
 			if (!(expr = pushsub(expr, sub, llim, rlim)))
 				return NULL;
+			index = strspn(expr, " ");
+			if (isparity(expr[index]))
+				index++;
 		}
 	}
 	return (*expr_addr = expr);

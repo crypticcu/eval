@@ -12,19 +12,78 @@ void phelp(void);
 
 int main(int argc, char *argv[]) {
 	char *expr, *swap, chr;
-	bool help_only = false;
+	bool help_only = false, field_is_last = false;
+	unsigned field = 1;
 	double result;
-	double ndec = 6;	// Number of decimal places; Default is 6 (same as printf)
+	double ndec = 6;	// Number of decimal places, default is 6 (same as printf)
 
-	if (initstat())
+	if (atexit(clrstat))
 		return EXIT_FAILURE;
-	MaxDec = nwhole(SSIZE_MAX);	// # of accurate digits retained when converting double to integral
-	if (MaxDec > DBL_DIG)
-		MaxDec = DBL_DIG;
-	MaxLn = SSIZE_MAX;	// Equal to or lower than SSIZE_MAX; Alleviates conversion issues
+	for (size_t arg = 1; arg < argc; arg++) {	// Get Flags
+		if (*argv[arg] != '-') {
+			if (!strchr(argv[arg - 1], 'd') && argc < argc - 1) {
+				setstat(ERR_INVARG);
+				setinv(NULL, arg);
+				break;
+			}
+		} else {
+			for (size_t index = 1; (chr = *(argv[arg] + index)); index++) {
+				switch (chr) {
+				case 'h':
+					Flags.help = true;
+					break;
+				case 'd':
+					if (arg == argc - 1) {
+						setstat(ERR_INVARG);
+						setinv(NULL, arg);
+						break;					}
+					ndec = stod(argv[arg + field]);
+					if (ndec < 0 || ndec > MaxDec || !iswhole(ndec)) {
+						setstat(ERR_INVDEC);
+						break;
+					}
+					if (arg + field == argc - 1)
+						field_is_last = true;
+					Flags.round = true;
+					field++;
+					break;
+				case 'r':
+					Flags.radian = true;
+					break;
+				default:
+					setstat(ERR_INVFLAG);
+					setinv(argv[arg], index);
+				}
+			}
+		}
+		field = 0;
+	}
+	if (ErrStat > 0) {
+		pstatus();
+		return EXIT_FAILURE;
+	}
+	if (Flags.help) {
+		phelp();
+		if (help_only)
+			return EXIT_SUCCESS;
+		putchar('\n');	// Seperate help page from normal output
+	}
 
+	/* Command-line */
+	if (*argv[argc - 1] != '-' && !strchr(argv[argc > 1 ? argc - 2 : argc - 1], 'd') && argc > 1) {
+		CmdLn = true;
+		if (strlen(expr = argv[argc - 1]) >= MaxLn) {			setstat(ERR_INPUTSIZE);
+			pstatus();
+			return EXIT_FAILURE;
+		}
+		if (!(expr = parse(expr, ndec, NULL))) {
+			pstatus();
+			return EXIT_FAILURE;
+		}
+		puts(expr);
+		free(expr);
 	/* Interactive */
-	if (argc == 1) {
+	} else {
 		CmdLn = false;
 		while (true) {
 			printf("> ");
@@ -46,85 +105,26 @@ int main(int argc, char *argv[]) {
 			} else
 				pstatus();
 		}
-		return EXIT_SUCCESS;
 	}
 
-	/* Command line */
-	CmdLn = true;
-	if (strlen(expr = argv[argc - 1]) >= MaxLn) {	
-		errstat(ERR_INPUTSIZE);
-		pstatus();
-		return EXIT_FAILURE;
-	}
-	if (argv[argc - 1])
-	if (argc == 2 && !strcmp(argv[argc - 1], "-h"))
-		help_only = true;
-	if (*argv[argc - 1] == '-' &&  !help_only) {	// Final argument cannot be flag, unless it is '-h' flag
-		errstat(ERR_INVFLAG);
-		pstatus();
-		return EXIT_FAILURE;
-	}
-	for (size_t nstr = 1; nstr < argc; nstr++) {	// Get Flags
-		for (size_t index = 1; *argv[nstr] == '-' && (chr = *(argv[nstr] + index)); index++) {
-			switch (chr) {
-			case 'h':
-				Flags.help = true;
-				break;
-			case 'd':
-				Flags.round = true;
-				if (nstr != argc - 2) {	// '-d' place takes argument afterward
-					if ((ndec = stod(argv[nstr + 1])) < 0 || ndec > MaxDec || !isequal(ndec, (intmax_t) ndec)) {
-						errstat(ERR_INVDEC);
-						pstatus();
-						return EXIT_FAILURE;
-					}
-				} else {
-					errstat(ERR_INVFLAG);
-					pstatus();
-					return EXIT_FAILURE;
-				}
-				break;
-			case 'r':
-				Flags.radian = true;
-				break;
-			default:
-				errstat(ERR_INVFLAG);
-				pstatus();
-				return EXIT_FAILURE;
-			}
-		}
-	}
-	if (Flags.help) {
-		phelp();
-		if (help_only)
-			return EXIT_SUCCESS;
-		putchar('\n');	// Seperate help page from answer
-	}
-	if (!(expr = parse(expr, ndec, NULL))) {
-		putchar('\n');	// Seperate error message from terminal cursor
-		return EXIT_FAILURE;
-	}
-	puts(expr);
-	free(expr);
 	return EXIT_SUCCESS;
 }
 
 void phelp(void) {
-	puts("Usage: parse [Flags] [EXPRESSION]    Command-line");
+	puts("Usage: parse [FLAGS] [EXPRESSION]    Command-line");
 	puts("       parse                         Interactive ");
-	puts("High-accuracy terminal calculator");
-	puts("This software falls under the GNU Public License v3.0\n");
+	puts("High-accuracy terminal calculator\n");
 
 	puts("Flags");
-	puts("-h         Show help page");
 	puts("-d [INT]   Round to # of decimals");
+	puts("-h         Show help page");
 	puts("-r         Radian mode\n");
 
-	puts( "Operators" );
+	puts("Operators");
 	puts("++, --     ++x, --x         Increment, decrement");
-	puts("!, !!      !x, y!!x         Square root, other root        ↑ Higher precedence");
+	puts("!, !!      !x, y!!x         Square root, other root        ↑ Higher precedence\n");
 	puts("^          x^y              Exponent");
-	puts("*, /, %    x*y, x/y, x%y    Multiply, divide, remainder    ↓ Lower Precedence");
+	puts("*, /, %    x*y, x/y, x%y    Multiply, divide, remainder    ↓ Lower Precedence\n");
 	puts("+, -       x+y, x-y         Add, subtract\n");
 
 	puts("           (x + y)          Control precedence");
